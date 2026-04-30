@@ -9,9 +9,11 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="博士健身">
+    <meta name="theme-color" content="#f2f2f7">
     
     <!-- 桌面图标 -->
     <link rel="apple-touch-icon" href="https://img.icons8.com/fluency/192/dumbbell.png">
+    <link rel="manifest" href="./manifest.json">
     
     <title>博士健身日志 - 个人版</title>
     <script src="https://cdn.tailwindcss.com"></script>
@@ -63,7 +65,7 @@
 
         .no-scrollbar::-webkit-scrollbar { display: none; }
 
-        input {
+        input, select, textarea {
             font-size: 16px !important;
             transform: scale(1);
             -webkit-user-select: text; /* 允许输入框选择文字 */
@@ -138,6 +140,11 @@
                     <h3 class="text-lg font-bold text-gray-800 mb-2">博士点评</h3>
                     <p id="stats-comment" class="text-sm text-gray-500 leading-relaxed">数据加载中...</p>
                 </div>
+                <div id="weekly-summary" class="grid grid-cols-2 gap-3"></div>
+                <div class="bg-gray-50 p-6 rounded-3xl border border-gray-100">
+                    <h3 class="text-lg font-bold text-gray-800 mb-3">最近重量</h3>
+                    <div id="recent-progress-list" class="space-y-3 text-sm text-gray-600"></div>
+                </div>
                 <div class="pt-4">
                     <button onclick="App.exportData()" class="w-full py-4 bg-green-500 hover:bg-green-600 text-white rounded-2xl font-bold text-lg shadow-xl shadow-green-200 active:scale-[0.98] transition-all flex items-center justify-center space-x-2">
                         <i class="fa-solid fa-file-excel"></i><span>导出 Excel 数据</span>
@@ -159,6 +166,32 @@
             </div>
         </div>
 
+        <!-- Plan View -->
+        <div id="view-plan" class="flex-1 hidden scroll-container px-4 py-6 pb-40 bg-white">
+            <div class="space-y-5">
+                <div>
+                    <h2 class="text-2xl font-black text-gray-900">训练计划</h2>
+                    <p class="text-sm text-gray-400 mt-1">按自己的器械和状态调整动作。</p>
+                </div>
+                <div id="plan-tabs-container" class="flex space-x-3 overflow-x-auto no-scrollbar scroll-smooth"></div>
+                <div class="bg-gray-50 p-4 rounded-3xl border border-gray-100">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <h3 id="plan-day-title" class="text-lg font-black text-gray-900">--</h3>
+                            <p id="plan-day-count" class="text-xs text-gray-400 mt-1">--</p>
+                        </div>
+                        <button onclick="App.openPlanEditor()" class="w-10 h-10 rounded-full bg-blue-600 text-white shadow-lg shadow-blue-100 active-scale">
+                            <i class="fa-solid fa-plus text-sm"></i>
+                        </button>
+                    </div>
+                    <div id="plan-list" class="space-y-3"></div>
+                </div>
+                <button onclick="App.resetPlanDay()" class="w-full py-3 bg-white text-red-500 rounded-2xl font-bold text-sm border border-red-100 active:scale-[0.98] transition-all flex items-center justify-center space-x-2">
+                    <i class="fa-solid fa-rotate-left"></i><span>恢复当天默认计划</span>
+                </button>
+            </div>
+        </div>
+
         <!-- Tab Bar -->
         <nav class="absolute bottom-0 w-full bg-white/90 backdrop-blur-xl border-t border-gray-200 pb-[calc(var(--safe-bottom)+15px)] pt-3 px-6 flex justify-around items-center z-30">
             <button onclick="App.setView('home')" class="flex flex-col items-center text-blue-600 active-scale transition-colors w-16" id="nav-home">
@@ -167,8 +200,8 @@
             <button onclick="App.setView('stats')" class="flex flex-col items-center text-gray-400 active-scale transition-colors w-16" id="nav-stats">
                 <i class="fa-solid fa-chart-pie text-xl mb-1"></i><span class="text-[10px] font-bold">统计</span>
             </button>
-            <button onclick="App.goToday()" class="flex flex-col items-center text-gray-400 active-scale hover:text-blue-600 transition-colors w-16">
-                <i class="fa-solid fa-calendar-day text-xl mb-1"></i><span class="text-[10px] font-bold">今天</span>
+            <button onclick="App.setView('plan')" class="flex flex-col items-center text-gray-400 active-scale transition-colors w-16" id="nav-plan">
+                <i class="fa-solid fa-list-check text-xl mb-1"></i><span class="text-[10px] font-bold">计划</span>
             </button>
         </nav>
 
@@ -196,6 +229,49 @@
             </div>
         </div>
 
+        <!-- Plan Modal -->
+        <div id="plan-modal-overlay" class="fixed inset-0 bg-black/40 hidden transition-opacity duration-300 opacity-0 z-[60]" onclick="if(event.target === this) App.closePlanModal()">
+            <div id="plan-modal-card" class="absolute bottom-0 w-full max-w-[500px] left-1/2 -translate-x-1/2 bg-white rounded-t-[32px] shadow-2xl transform translate-y-full transition-transform duration-300 flex flex-col max-h-[90%] pb-[calc(var(--safe-bottom)+18px)]">
+                <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-white rounded-t-[32px] flex-shrink-0">
+                    <h3 id="plan-modal-title" class="text-lg font-black text-gray-800">编辑动作</h3>
+                    <button onclick="App.closePlanModal()" class="w-8 h-8 rounded-full bg-gray-100 text-gray-500 flex items-center justify-center active-scale"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                <div class="scroll-container p-6 space-y-4 flex-1 overflow-y-auto">
+                    <label class="block">
+                        <span class="block text-xs font-bold text-gray-400 mb-2">动作名称</span>
+                        <input id="plan-ex-name" class="w-full h-12 rounded-2xl bg-gray-50 px-4 font-bold border border-transparent focus:border-blue-500" placeholder="例如：器械腿推">
+                    </label>
+                    <label class="block">
+                        <span class="block text-xs font-bold text-gray-400 mb-2">动作类型</span>
+                        <select id="plan-ex-type" class="w-full h-12 rounded-2xl bg-gray-50 px-4 font-bold border border-transparent focus:border-blue-500">
+                            <option value="weighted">负重动作</option>
+                            <option value="bodyweight">自重动作</option>
+                            <option value="time">计时动作</option>
+                            <option value="cardio">有氧运动</option>
+                        </select>
+                    </label>
+                    <div class="grid grid-cols-2 gap-3">
+                        <label class="block">
+                            <span class="block text-xs font-bold text-gray-400 mb-2">目标组数</span>
+                            <input id="plan-ex-sets" type="number" min="1" class="w-full h-12 rounded-2xl bg-gray-50 px-4 font-bold border border-transparent focus:border-blue-500" placeholder="3">
+                        </label>
+                        <label class="block">
+                            <span class="block text-xs font-bold text-gray-400 mb-2">目标次数/时间</span>
+                            <input id="plan-ex-reps" class="w-full h-12 rounded-2xl bg-gray-50 px-4 font-bold border border-transparent focus:border-blue-500" placeholder="12 或 30s">
+                        </label>
+                    </div>
+                    <label class="block">
+                        <span class="block text-xs font-bold text-gray-400 mb-2">动作提示</span>
+                        <textarea id="plan-ex-detail" rows="4" class="w-full rounded-2xl bg-gray-50 p-4 text-sm leading-relaxed border border-transparent focus:border-blue-500" placeholder="写下座椅高度、发力感觉、注意事项等。"></textarea>
+                    </label>
+                </div>
+                <div class="p-6 border-t border-gray-100 bg-white flex-shrink-0 space-y-3">
+                    <button onclick="App.savePlanExercise()" class="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold text-lg shadow-xl shadow-blue-200 active:scale-[0.98] transition-all">保存动作</button>
+                    <button id="plan-delete-btn" onclick="App.deletePlanExercise()" class="hidden w-full py-3 bg-red-50 text-red-500 rounded-2xl font-bold text-sm border border-red-100 active:scale-[0.98] transition-all">删除动作</button>
+                </div>
+            </div>
+        </div>
+
         <div id="toast" class="fixed top-24 left-1/2 -translate-x-1/2 bg-gray-900/95 text-white px-6 py-3 rounded-full text-xs font-bold shadow-2xl pointer-events-none opacity-0 transition-opacity duration-300 z-[100]"><i class="fa-solid fa-circle-check text-green-400 mr-2"></i><span id="toast-msg">操作成功</span></div>
     </div>
 
@@ -210,6 +286,7 @@
 
         const DATA_KEY = 'drlog_gym_pro_daily_v1';
         const LEGACY_DATA_KEY = 'drlog_gym_pro_data';
+        const PLAN_KEY = 'drlog_gym_pro_plan_v1';
 
         function toDateKey(date) {
             const y = date.getFullYear();
@@ -256,6 +333,62 @@
                 .replaceAll('>', '&gt;');
         }
 
+        function cloneData(value) {
+            return JSON.parse(JSON.stringify(value));
+        }
+
+        function iconForType(type) {
+            return {
+                weighted: 'fa-dumbbell',
+                bodyweight: 'fa-person',
+                time: 'fa-stopwatch',
+                cardio: 'fa-heart-pulse'
+            }[type] || 'fa-dumbbell';
+        }
+
+        function typeLabel(type) {
+            return {
+                weighted: '负重',
+                bodyweight: '自重',
+                time: '计时',
+                cardio: '有氧'
+            }[type] || '负重';
+        }
+
+        function normalizeWorkoutPlan(raw) {
+            const base = cloneData(WORKOUT_DB);
+            if (!raw || typeof raw !== 'object') return base;
+
+            [1, 2, 3, 4, 5].forEach(day => {
+                const source = raw[day] || {};
+                base[day] = {
+                    ...base[day],
+                    ...source,
+                    exercises: Array.isArray(source.exercises) ? source.exercises.map(ex => ({
+                        name: String(ex.name || '新动作').trim(),
+                        sets: Math.max(1, Number(ex.sets) || 1),
+                        reps: String(ex.reps || '12').trim(),
+                        type: ['weighted', 'bodyweight', 'time', 'cardio'].includes(ex.type) ? ex.type : 'weighted',
+                        icon: ex.icon || iconForType(ex.type),
+                        detail: String(ex.detail || '保持动作稳定，按当天状态微调。').trim()
+                    })) : base[day].exercises
+                };
+            });
+
+            return base;
+        }
+
+        function isLogDone(ex, logRows) {
+            if (!logRows) return false;
+            if (ex.type === 'cardio') return logRows.some(x => x.t || x.c);
+            return logRows.some(x => x.w || x.r);
+        }
+
+        function toNumber(value) {
+            const n = Number(value);
+            return Number.isFinite(n) ? n : 0;
+        }
+
         const WORKOUT_DB = {
             1: { title: "胸部 + 三头肌", color: "from-blue-500 to-cyan-500", exercises: [
                 { name: "坐姿推胸机", sets: 4, reps: 12, type: "weighted", icon: "fa-cubes-stacked", detail: "【替代哑铃卧推】调整座椅高度，手柄与胸部中线齐平。向前推起时吐气。这比哑铃更稳。" },
@@ -289,10 +422,28 @@
         };
 
         const App = {
-            state: { selectedDate: toDateKey(getInitialDate()), selectedDay: getWeekday(new Date()), logs: {}, modalExIdx: null, currentView: 'home', chart: null },
+            state: { selectedDate: toDateKey(getInitialDate()), selectedDay: getWeekday(new Date()), logs: {}, workouts: normalizeWorkoutPlan(), modalExIdx: null, planEditIdx: null, currentView: 'home', chart: null },
             init() {
+                this.loadPlan();
                 this.loadLocal();
                 this.renderAll();
+                this.registerServiceWorker();
+            },
+            loadPlan() {
+                const saved = localStorage.getItem(PLAN_KEY);
+                if (!saved) return;
+                try {
+                    this.state.workouts = normalizeWorkoutPlan(JSON.parse(saved));
+                } catch (e) {
+                    console.warn('Plan data parse failed', e);
+                }
+            },
+            savePlan() {
+                localStorage.setItem(PLAN_KEY, JSON.stringify(this.state.workouts));
+            },
+            registerServiceWorker() {
+                if (!('serviceWorker' in navigator)) return;
+                navigator.serviceWorker.register('./service-worker.js').catch(e => console.warn('Service worker registration failed', e));
             },
             loadLocal() {
                 const daily = localStorage.getItem(DATA_KEY);
@@ -314,7 +465,7 @@
                     const base = new Date();
                     Object.keys(oldLogs).forEach(day => {
                         const dayNumber = Number(day);
-                        if (!WORKOUT_DB[dayNumber]) return;
+                        if (!this.state.workouts[dayNumber]) return;
                         const dateKey = toDateKey(dateForWeekday(dayNumber, base));
                         this.state.logs[dateKey] = { day: dayNumber, entries: oldLogs[day] };
                     });
@@ -371,10 +522,13 @@
                 this.state.currentView = v;
                 document.getElementById('view-home').className = v === 'home' ? 'flex-1 flex flex-col overflow-hidden relative' : 'hidden';
                 document.getElementById('view-stats').className = v === 'stats' ? 'flex-1 scroll-container px-4 py-6 pb-40 bg-white' : 'hidden';
+                document.getElementById('view-plan').className = v === 'plan' ? 'flex-1 scroll-container px-4 py-6 pb-40 bg-white' : 'hidden';
                 document.getElementById('nav-home').className = `flex flex-col items-center transition-colors w-16 ${v === 'home' ? 'text-blue-600' : 'text-gray-400'} active-scale`;
                 document.getElementById('nav-stats').className = `flex flex-col items-center transition-colors w-16 ${v === 'stats' ? 'text-blue-600' : 'text-gray-400'} active-scale`;
-                document.getElementById('page-title').innerText = v === 'home' ? '健身日志 Pro' : '数据统计';
+                document.getElementById('nav-plan').className = `flex flex-col items-center transition-colors w-16 ${v === 'plan' ? 'text-blue-600' : 'text-gray-400'} active-scale`;
+                document.getElementById('page-title').innerText = v === 'home' ? '健身日志 Pro' : (v === 'stats' ? '数据统计' : '训练计划');
                 if(v==='stats') this.renderStats();
+                if(v==='plan') this.renderPlan();
             },
             
             // --- 智能填充逻辑 (终极修复版 + PWA支持) ---
@@ -480,7 +634,7 @@
 
             openModal(idx) {
                 this.state.modalExIdx = idx;
-                const ex = WORKOUT_DB[this.state.selectedDay].exercises[idx];
+                const ex = this.state.workouts[this.state.selectedDay].exercises[idx];
                 const logs = this.getSelectedRecord().entries[idx] || [];
                 
                 document.getElementById('modal-title').innerText = ex.name;
@@ -532,7 +686,7 @@
                 setTimeout(() => { overlay.classList.add('hidden'); }, 300);
             },
             saveCurrentLog() {
-                const ex = WORKOUT_DB[this.state.selectedDay].exercises[this.state.modalExIdx];
+                const ex = this.state.workouts[this.state.selectedDay].exercises[this.state.modalExIdx];
                 const isCardio = ex.type === 'cardio';
                 const rows = document.querySelectorAll('.set-row');
                 
@@ -571,6 +725,7 @@
                 const d = parseDateKey(this.state.selectedDate);
                 document.getElementById('date-display').innerText = d.toLocaleDateString('zh-CN', {weekday:'long', month:'short', day:'numeric'});
                 if (this.state.currentView === 'stats') this.renderStats();
+                if (this.state.currentView === 'plan') this.renderPlan();
             },
             renderTabs() {
                 document.getElementById('tabs-container').innerHTML = [1,2,3,4,5].map(d => 
@@ -585,18 +740,14 @@
                 document.getElementById('selected-week-label').innerText = selectedWeek === currentWeek ? "本周" : "点此回到本周";
             },
             renderMain() {
-                const data = WORKOUT_DB[this.state.selectedDay];
+                const data = this.state.workouts[this.state.selectedDay];
                 const c = document.getElementById('main-list');
                 if(!data.exercises.length) { c.innerHTML = `<div class="text-center py-20 text-gray-400"><h3>休息日</h3><p class="text-xs">好好睡觉</p></div>`; return; }
                 const dayEntries = this.getSelectedRecord().entries || {};
                 c.innerHTML = `<div class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 px-1 flex items-center"><span class="w-2 h-2 rounded-full bg-gradient-to-r ${data.color} mr-2"></span>${data.title}</div>` + 
                 data.exercises.map((ex, i) => {
                     const l = dayEntries[i];
-                    let done = false;
-                    if (l) {
-                        if (ex.type === 'cardio') done = l.some(x => x.t || x.c);
-                        else done = l.some(x => x.w || x.r);
-                    }
+                    const done = isLogDone(ex, l);
                     
                     return `<div onclick="App.openModal(${i})" class="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex items-center space-x-4 mb-4 active:scale-[0.98] transition-transform relative overflow-hidden group">
                         <div class="w-12 h-12 rounded-xl bg-gray-50 flex items-center justify-center text-blue-500 text-lg group-hover:bg-blue-500 group-hover:text-white transition-colors duration-300"><i class="fa-solid ${ex.icon}"></i></div>
@@ -605,28 +756,188 @@
                     </div>`;
                 }).join('');
             },
+            renderPlan() {
+                document.getElementById('plan-tabs-container').innerHTML = [1,2,3,4,5].map(d => 
+                    `<button onclick="App.switchPlanDay(${d})" class="flex-shrink-0 px-5 py-2 rounded-full text-sm font-bold transition-all ${this.state.selectedDay === d ? 'bg-black text-white' : 'bg-white text-gray-400 border border-gray-100'}">周${['一','二','三','四','五'][d-1]}</button>`
+                ).join('');
+
+                const day = this.state.workouts[this.state.selectedDay];
+                document.getElementById('plan-day-title').innerText = day.title;
+                document.getElementById('plan-day-count').innerText = day.exercises.length ? `${day.exercises.length} 个动作` : '休息日，可添加轻量恢复内容';
+
+                const list = document.getElementById('plan-list');
+                if (!day.exercises.length) {
+                    list.innerHTML = `<div class="text-center py-10 text-gray-400 text-sm">今天没有安排动作。</div>`;
+                    return;
+                }
+
+                list.innerHTML = day.exercises.map((ex, idx) => `
+                    <div class="bg-white rounded-2xl border border-gray-100 p-4 flex items-center space-x-3">
+                        <div class="w-11 h-11 rounded-xl bg-blue-50 flex items-center justify-center text-blue-500"><i class="fa-solid ${ex.icon || iconForType(ex.type)}"></i></div>
+                        <div class="flex-1 min-w-0">
+                            <div class="font-bold text-gray-900 text-sm truncate">${ex.name}</div>
+                            <div class="text-[11px] text-gray-400 mt-1">${typeLabel(ex.type)} · ${ex.sets}组 × ${ex.reps}</div>
+                        </div>
+                        <button onclick="App.openPlanEditor(${idx})" class="w-9 h-9 rounded-full bg-gray-50 text-gray-500 active-scale"><i class="fa-solid fa-pen text-xs"></i></button>
+                    </div>
+                `).join('');
+            },
+            switchPlanDay(day) {
+                this.switchTab(day);
+                this.renderPlan();
+            },
+            openPlanEditor(idx = null) {
+                this.state.planEditIdx = idx;
+                const isEdit = idx !== null && idx !== undefined;
+                const day = this.state.workouts[this.state.selectedDay];
+                const ex = isEdit ? day.exercises[idx] : { name: '', type: 'weighted', sets: 3, reps: 12, detail: '' };
+
+                document.getElementById('plan-modal-title').innerText = isEdit ? '编辑动作' : '添加动作';
+                document.getElementById('plan-ex-name').value = ex.name || '';
+                document.getElementById('plan-ex-type').value = ex.type || 'weighted';
+                document.getElementById('plan-ex-sets').value = ex.sets || 3;
+                document.getElementById('plan-ex-reps').value = ex.reps || 12;
+                document.getElementById('plan-ex-detail').value = ex.detail || '';
+                document.getElementById('plan-delete-btn').classList.toggle('hidden', !isEdit);
+
+                const overlay = document.getElementById('plan-modal-overlay');
+                overlay.classList.remove('hidden');
+                setTimeout(() => {
+                    overlay.classList.remove('opacity-0');
+                    document.getElementById('plan-modal-card').classList.remove('translate-y-full');
+                }, 10);
+            },
+            closePlanModal() {
+                const overlay = document.getElementById('plan-modal-overlay');
+                overlay.classList.add('opacity-0');
+                document.getElementById('plan-modal-card').classList.add('translate-y-full');
+                setTimeout(() => overlay.classList.add('hidden'), 300);
+            },
+            savePlanExercise() {
+                const name = document.getElementById('plan-ex-name').value.trim();
+                const type = document.getElementById('plan-ex-type').value;
+                const sets = Math.max(1, Number(document.getElementById('plan-ex-sets').value) || 1);
+                const reps = document.getElementById('plan-ex-reps').value.trim() || (type === 'cardio' ? '25min' : '12');
+                const detail = document.getElementById('plan-ex-detail').value.trim() || '保持动作稳定，按当天状态微调。';
+
+                if (!name) {
+                    alert('请填写动作名称');
+                    return;
+                }
+
+                const exercise = { name, type, sets, reps, icon: iconForType(type), detail };
+                const day = this.state.workouts[this.state.selectedDay];
+                if (this.state.planEditIdx === null || this.state.planEditIdx === undefined) {
+                    day.exercises.push(exercise);
+                } else {
+                    day.exercises[this.state.planEditIdx] = exercise;
+                }
+
+                this.savePlan();
+                this.closePlanModal();
+                this.renderAll();
+                this.showToast('计划已保存');
+            },
+            deletePlanExercise() {
+                if (this.state.planEditIdx === null || this.state.planEditIdx === undefined) return;
+                if (!confirm('确定删除这个动作？当天及历史记录里同位置的记录也可能不再对应。')) return;
+                this.state.workouts[this.state.selectedDay].exercises.splice(this.state.planEditIdx, 1);
+                this.savePlan();
+                this.closePlanModal();
+                this.renderAll();
+                this.showToast('动作已删除');
+            },
+            resetPlanDay() {
+                const defaultDay = cloneData(WORKOUT_DB[this.state.selectedDay]);
+                if (!confirm(`确定恢复“${defaultDay.title}”的默认计划？`)) return;
+                this.state.workouts[this.state.selectedDay] = defaultDay;
+                this.savePlan();
+                this.renderAll();
+                this.showToast('已恢复默认计划');
+            },
             renderStats() {
                 const ctx = document.getElementById('completionChart').getContext('2d');
-                const days = [1, 2, 3, 5];
+                const days = [1, 2, 3, 4, 5].filter(d => this.state.workouts[d].exercises.length);
                 const labels = days.map(d => {
                     const date = dateForWeekday(d, parseDateKey(this.state.selectedDate));
                     return `周${['一','二','三','四','五'][d-1]} ${date.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}`;
                 });
+                let totalExercises = 0;
+                let completedExercises = 0;
+                let trainingDays = 0;
+                let cardioMinutes = 0;
+                let cardioKcal = 0;
+                let strengthSets = 0;
+
                 const data = days.map(d => {
-                    const def = WORKOUT_DB[d];
+                    const def = this.state.workouts[d];
                     const dateKey = toDateKey(dateForWeekday(d, parseDateKey(this.state.selectedDate)));
                     const l = (this.state.logs[dateKey] && this.state.logs[dateKey].entries) || {};
                     let c = 0;
+                    let dayHasLog = false;
                     def.exercises.forEach((ex, i) => { 
-                        if (l[i]) {
-                            if (ex.type === 'cardio') { if (l[i].some(r => r.t || r.c)) c++; }
-                            else { if (l[i].some(r => r.w || r.r)) c++; }
+                        totalExercises++;
+                        const rows = l[i] || [];
+                        if (isLogDone(ex, rows)) {
+                            c++;
+                            completedExercises++;
+                            dayHasLog = true;
                         }
+                        rows.forEach(row => {
+                            if (ex.type === 'cardio') {
+                                cardioMinutes += toNumber(row.t);
+                                cardioKcal += toNumber(row.c);
+                            } else if (row.w || row.r) {
+                                strengthSets++;
+                            }
+                        });
                     });
-                    return Math.round((c / def.exercises.length) * 100);
+                    if (dayHasLog) trainingDays++;
+                    return def.exercises.length ? Math.round((c / def.exercises.length) * 100) : 0;
                 });
-                const total = data.reduce((a,b)=>a+b, 0) / data.length;
-                document.getElementById('stats-comment').innerText = total > 80 ? "太棒了！你是健身房的王者！" : (total > 0 ? "继续加油，保持节奏！" : "本周还没开始？哪怕只做一个俯卧撑也是开始。");
+
+                const total = totalExercises ? Math.round((completedExercises / totalExercises) * 100) : 0;
+                document.getElementById('stats-comment').innerText = total > 80 ? "太棒了！这周执行力很稳，继续保持。" : (total > 0 ? "已经开始积累了，下一次训练只要接着填就行。" : "本周还没开始？哪怕只做一个动作也是开始。");
+                if (!days.length) document.getElementById('stats-comment').innerText = '当前计划没有训练动作。';
+
+                document.getElementById('weekly-summary').innerHTML = [
+                    { label: '本周完成', value: `${total}%`, icon: 'fa-circle-check' },
+                    { label: '训练天数', value: `${trainingDays}天`, icon: 'fa-calendar-check' },
+                    { label: '力量组数', value: `${strengthSets}组`, icon: 'fa-dumbbell' },
+                    { label: '有氧累计', value: `${cardioMinutes}min`, icon: 'fa-heart-pulse' },
+                    { label: '有氧热量', value: `${cardioKcal}kcal`, icon: 'fa-fire' },
+                    { label: '完成动作', value: `${completedExercises}/${totalExercises}`, icon: 'fa-list-check' }
+                ].map(item => `
+                    <div class="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
+                        <div class="w-9 h-9 rounded-xl bg-blue-50 text-blue-500 flex items-center justify-center mb-3"><i class="fa-solid ${item.icon} text-sm"></i></div>
+                        <div class="text-xl font-black text-gray-900">${item.value}</div>
+                        <div class="text-[11px] font-bold text-gray-400 mt-1">${item.label}</div>
+                    </div>
+                `).join('');
+
+                const recent = [];
+                Object.keys(this.state.logs).sort().reverse().forEach(dateKey => {
+                    const record = this.state.logs[dateKey];
+                    const def = this.state.workouts[record.day] || WORKOUT_DB[record.day];
+                    if (!def) return;
+                    Object.keys(record.entries || {}).forEach(exIdx => {
+                        const ex = def.exercises[Number(exIdx)];
+                        if (!ex || ex.type === 'cardio') return;
+                        const row = (record.entries[exIdx] || []).find(r => r.w || r.r);
+                        if (!row || recent.some(item => item.name === ex.name)) return;
+                        recent.push({ name: ex.name, date: dateKey, w: row.w || '自重', r: row.r || '-' });
+                    });
+                });
+                document.getElementById('recent-progress-list').innerHTML = recent.length ? recent.slice(0, 5).map(item => `
+                    <div class="flex items-center justify-between bg-white rounded-2xl border border-gray-100 p-3">
+                        <div class="min-w-0">
+                            <div class="font-bold text-gray-800 truncate">${item.name}</div>
+                            <div class="text-[11px] text-gray-400 mt-1">${item.date}</div>
+                        </div>
+                        <div class="text-right font-black text-gray-900">${item.w} × ${item.r}</div>
+                    </div>
+                `).join('') : `<p class="text-gray-400 text-sm">暂无力量记录。</p>`;
+
                 if (this.state.chart) this.state.chart.destroy();
                 this.state.chart = new Chart(ctx, { type: 'bar', data: { labels, datasets: [{ label: '完成度 (%)', data, backgroundColor: 'rgba(59, 130, 246, 0.6)', borderRadius: 6 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, max: 100 } } } });
             },
@@ -637,7 +948,7 @@
                 Object.keys(this.state.logs).sort().forEach(dateKey => {
                     const record = this.state.logs[dateKey];
                     const d = record.day || getWeekday(parseDateKey(dateKey));
-                    const def = WORKOUT_DB[d];
+                    const def = this.state.workouts[d];
                     if (!def || !def.exercises.length) return;
                     const entries = record.entries || {};
                     const weekName = parseDateKey(dateKey).toLocaleDateString('zh-CN', { weekday: 'long' });
