@@ -142,6 +142,21 @@
                 </div>
                 <div id="weekly-summary" class="grid grid-cols-2 gap-3"></div>
                 <div class="bg-gray-50 p-6 rounded-3xl border border-gray-100">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-lg font-bold text-gray-800">月度概览</h3>
+                        <span id="month-label" class="text-xs font-bold text-blue-500 bg-blue-50 px-3 py-1 rounded-full">--</span>
+                    </div>
+                    <div id="monthly-summary" class="grid grid-cols-2 gap-3"></div>
+                </div>
+                <div class="bg-gray-50 p-6 rounded-3xl border border-gray-100">
+                    <div class="flex items-center justify-between gap-3 mb-4">
+                        <h3 class="text-lg font-bold text-gray-800 flex-shrink-0">动作趋势</h3>
+                        <select id="trend-exercise-select" onchange="App.renderTrendChart()" class="min-w-0 flex-1 h-10 rounded-2xl bg-white px-3 text-xs font-bold border border-gray-100"></select>
+                    </div>
+                    <div id="trend-empty" class="hidden text-center py-10 text-sm text-gray-400">暂无趋势数据。</div>
+                    <div id="trend-chart-wrap" class="h-64 relative"><canvas id="trendChart"></canvas></div>
+                </div>
+                <div class="bg-gray-50 p-6 rounded-3xl border border-gray-100">
                     <h3 class="text-lg font-bold text-gray-800 mb-3">最近重量</h3>
                     <div id="recent-progress-list" class="space-y-3 text-sm text-gray-600"></div>
                 </div>
@@ -185,6 +200,20 @@
                         </button>
                     </div>
                     <div id="plan-list" class="space-y-3"></div>
+                </div>
+                <div class="bg-gray-50 p-4 rounded-3xl border border-gray-100 space-y-3">
+                    <div class="flex items-center justify-between">
+                        <h3 class="text-base font-black text-gray-900">计划复制</h3>
+                        <i class="fa-solid fa-copy text-blue-500"></i>
+                    </div>
+                    <div class="grid grid-cols-[1fr_auto] gap-2">
+                        <select id="plan-copy-target" class="h-11 rounded-2xl bg-white px-3 text-sm font-bold border border-gray-100"></select>
+                        <button onclick="App.copyCurrentPlanToTarget()" class="px-4 h-11 rounded-2xl bg-blue-600 text-white font-bold text-sm active-scale">复制到</button>
+                    </div>
+                    <div class="grid grid-cols-[1fr_auto] gap-2">
+                        <select id="plan-copy-source" class="h-11 rounded-2xl bg-white px-3 text-sm font-bold border border-gray-100"></select>
+                        <button onclick="App.copyPlanFromSource()" class="px-4 h-11 rounded-2xl bg-white text-gray-700 border border-gray-200 font-bold text-sm active-scale">从它复制</button>
+                    </div>
                 </div>
                 <button onclick="App.resetPlanDay()" class="w-full py-3 bg-white text-red-500 rounded-2xl font-bold text-sm border border-red-100 active:scale-[0.98] transition-all flex items-center justify-center space-x-2">
                     <i class="fa-solid fa-rotate-left"></i><span>恢复当天默认计划</span>
@@ -237,6 +266,12 @@
                     <button onclick="App.closePlanModal()" class="w-8 h-8 rounded-full bg-gray-100 text-gray-500 flex items-center justify-center active-scale"><i class="fa-solid fa-xmark"></i></button>
                 </div>
                 <div class="scroll-container p-6 space-y-4 flex-1 overflow-y-auto">
+                    <label class="block">
+                        <span class="block text-xs font-bold text-gray-400 mb-2">动作库</span>
+                        <select id="plan-ex-library" onchange="App.applyLibraryExercise(this.value)" class="w-full h-12 rounded-2xl bg-blue-50 px-4 font-bold text-blue-700 border border-transparent focus:border-blue-500">
+                            <option value="">手动填写 / 选择常用动作</option>
+                        </select>
+                    </label>
                     <label class="block">
                         <span class="block text-xs font-bold text-gray-400 mb-2">动作名称</span>
                         <input id="plan-ex-name" class="w-full h-12 rounded-2xl bg-gray-50 px-4 font-bold border border-transparent focus:border-blue-500" placeholder="例如：器械腿推">
@@ -333,6 +368,13 @@
                 .replaceAll('>', '&gt;');
         }
 
+        function escapeHtml(value) {
+            return String(value ?? '')
+                .replaceAll('&', '&amp;')
+                .replaceAll('<', '&lt;')
+                .replaceAll('>', '&gt;');
+        }
+
         function cloneData(value) {
             return JSON.parse(JSON.stringify(value));
         }
@@ -381,12 +423,40 @@
         function isLogDone(ex, logRows) {
             if (!logRows) return false;
             if (ex.type === 'cardio') return logRows.some(x => x.t || x.c);
+            if (ex.type === 'bodyweight' || ex.type === 'time') return logRows.some(x => x.r);
             return logRows.some(x => x.w || x.r);
         }
 
         function toNumber(value) {
             const n = Number(value);
             return Number.isFinite(n) ? n : 0;
+        }
+
+        function formatShortDate(dateKey) {
+            return parseDateKey(dateKey).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' });
+        }
+
+        function summarizeRows(ex, rows) {
+            if (!isLogDone(ex, rows)) return '';
+            if (ex.type === 'cardio') {
+                const mode = (rows.find(row => row.m) || {}).m || '有氧运动';
+                const minutes = rows.reduce((sum, row) => sum + toNumber(row.t), 0);
+                const kcal = rows.reduce((sum, row) => sum + toNumber(row.c), 0);
+                const heartRows = rows.map(row => toNumber(row.h)).filter(Boolean);
+                const heart = heartRows.length ? Math.round(heartRows.reduce((sum, n) => sum + n, 0) / heartRows.length) : 0;
+                return [
+                    mode,
+                    minutes ? `${minutes}min` : '',
+                    heart ? `${heart}bpm` : '',
+                    kcal ? `${kcal}kcal` : ''
+                ].filter(Boolean).join(' / ');
+            }
+
+            const row = rows.find(item => item.r || (ex.type === 'weighted' && item.w));
+            if (!row) return '';
+            if (ex.type === 'time') return `${row.r || '-'}秒`;
+            const weight = ex.type === 'bodyweight' ? '自重' : `${row.w || '-'}kg`;
+            return `${weight} × ${row.r || '-'}`;
         }
 
         const WORKOUT_DB = {
@@ -421,8 +491,27 @@
             ]}
         };
 
+        const EXERCISE_LIBRARY = [
+            { name: "器械腿推", sets: 4, reps: 12, type: "weighted", icon: "fa-dumbbell", detail: "脚掌踩稳踏板，膝盖朝脚尖方向。不要完全锁死膝盖，控制下放速度。" },
+            { name: "哈克深蹲", sets: 4, reps: 10, type: "weighted", icon: "fa-weight-hanging", detail: "背部贴紧靠垫，脚位略向前。下蹲时膝盖稳定，起身时用大腿和臀部发力。" },
+            { name: "史密斯深蹲", sets: 4, reps: 10, type: "weighted", icon: "fa-weight-hanging", detail: "双脚略向前站，保持躯干稳定。先用轻重量找到轨迹，再逐步加重量。" },
+            { name: "坐姿腿屈伸", sets: 3, reps: 12, type: "weighted", icon: "fa-dumbbell", detail: "踢起到顶端停留1秒，感受大腿前侧收缩。下放时保持控制。" },
+            { name: "俯身腿弯举", sets: 3, reps: 12, type: "weighted", icon: "fa-dumbbell", detail: "髋部贴稳垫子，脚跟向臀部方向卷起。不要借腰部晃动。" },
+            { name: "坐姿推胸机", sets: 4, reps: 12, type: "weighted", icon: "fa-cubes-stacked", detail: "手柄与胸部中线齐平，推起时吐气。肩胛保持稳定，不要耸肩。" },
+            { name: "蝴蝶机夹胸", sets: 3, reps: 12, type: "weighted", icon: "fa-users-viewfinder", detail: "手臂微弯，向中间夹胸并停留1秒。回放时不要让重量片砸回去。" },
+            { name: "高位下拉机", sets: 4, reps: 12, type: "weighted", icon: "fa-angles-down", detail: "挺胸下拉，肘尖向身体两侧往下走。不要用身体后仰硬拽。" },
+            { name: "坐姿划船机", sets: 3, reps: 12, type: "weighted", icon: "fa-dumbbell", detail: "胸口顶住靠垫，拉回时肩胛后缩。全程避免耸肩。" },
+            { name: "坐姿推肩机", sets: 4, reps: 12, type: "weighted", icon: "fa-up-long", detail: "手腕保持中立，推起时不要耸肩。下放至耳朵附近即可。" },
+            { name: "哑铃侧平举", sets: 3, reps: 15, type: "weighted", icon: "fa-hands-asl-interpreting", detail: "用小重量控制，手肘微弯，举到肩高附近即可。" },
+            { name: "龙门架绳索下压", sets: 3, reps: 12, type: "weighted", icon: "fa-arrows-up-to-line", detail: "大臂夹紧身体两侧，只让小臂运动。底部伸直时收紧三头肌。" },
+            { name: "哑铃弯举", sets: 3, reps: 12, type: "weighted", icon: "fa-arm-flex", detail: "大臂固定，不要甩。顶峰收缩时慢一点。" },
+            { name: "平板支撑", sets: 3, reps: "35s", type: "time", icon: "fa-minus", detail: "夹臀收腹，身体保持一条线。感觉腰顶不住时先停，不硬撑变形动作。" },
+            { name: "标准俯卧撑", sets: 3, reps: 12, type: "bodyweight", icon: "fa-person-praying", detail: "核心收紧，胸口接近地面后推起。疲劳时可以改为跪姿。" },
+            { name: "有氧运动", sets: 1, reps: "25min", type: "cardio", icon: "fa-heart-pulse", detail: "可选椭圆机、爬楼机、跑步机爬坡、慢跑或单车。优先记录时长、心率和热量。" }
+        ];
+
         const App = {
-            state: { selectedDate: toDateKey(getInitialDate()), selectedDay: getWeekday(new Date()), logs: {}, workouts: normalizeWorkoutPlan(), modalExIdx: null, planEditIdx: null, currentView: 'home', chart: null },
+            state: { selectedDate: toDateKey(getInitialDate()), selectedDay: getWeekday(new Date()), logs: {}, workouts: normalizeWorkoutPlan(), modalExIdx: null, planEditIdx: null, planDraftIcon: null, currentView: 'home', chart: null, trendChart: null, trendKey: '' },
             init() {
                 this.loadPlan();
                 this.loadLocal();
@@ -493,6 +582,22 @@
             },
             getSelectedRecord() {
                 return this.state.logs[this.state.selectedDate] || { day: this.state.selectedDay, entries: {} };
+            },
+            getLastExerciseRecord(day, exIdx, beforeDateKey = this.state.selectedDate) {
+                const ex = this.state.workouts[day] && this.state.workouts[day].exercises[exIdx];
+                if (!ex) return null;
+                const foundDate = Object.keys(this.state.logs)
+                    .filter(dateKey => dateKey < beforeDateKey)
+                    .sort()
+                    .reverse()
+                    .find(dateKey => {
+                        const record = this.state.logs[dateKey];
+                        const rows = record && record.day === day && record.entries ? record.entries[exIdx] : null;
+                        return isLogDone(ex, rows);
+                    });
+                if (!foundDate) return null;
+                const rows = this.state.logs[foundDate].entries[exIdx] || [];
+                return { dateKey: foundDate, summary: summarizeRows(ex, rows), rows };
             },
             ensureSelectedRecord() {
                 if (!this.state.logs[this.state.selectedDate]) {
@@ -636,9 +741,10 @@
                 this.state.modalExIdx = idx;
                 const ex = this.state.workouts[this.state.selectedDay].exercises[idx];
                 const logs = this.getSelectedRecord().entries[idx] || [];
+                const last = this.getLastExerciseRecord(this.state.selectedDay, idx);
                 
                 document.getElementById('modal-title').innerText = ex.name;
-                document.getElementById('modal-tips').innerHTML = `<i class="fa-solid fa-graduation-cap mr-1"></i> 博士指引：${ex.detail}`;
+                document.getElementById('modal-tips').innerHTML = `<i class="fa-solid fa-graduation-cap mr-1"></i> 博士指引：${escapeHtml(ex.detail)}${last ? `<div class="mt-2 pt-2 border-t border-blue-100 text-blue-700"><i class="fa-solid fa-clock-rotate-left mr-1"></i> 上次记录：${escapeHtml(last.summary)} · ${formatShortDate(last.dateKey)}</div>` : ''}`;
                 
                 const isBw = ex.type === 'bodyweight' || ex.type === 'time';
                 const isTime = ex.type === 'time';
@@ -748,10 +854,11 @@
                 data.exercises.map((ex, i) => {
                     const l = dayEntries[i];
                     const done = isLogDone(ex, l);
+                    const last = this.getLastExerciseRecord(this.state.selectedDay, i);
                     
                     return `<div onclick="App.openModal(${i})" class="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex items-center space-x-4 mb-4 active:scale-[0.98] transition-transform relative overflow-hidden group">
                         <div class="w-12 h-12 rounded-xl bg-gray-50 flex items-center justify-center text-blue-500 text-lg group-hover:bg-blue-500 group-hover:text-white transition-colors duration-300"><i class="fa-solid ${ex.icon}"></i></div>
-                        <div class="flex-1"><h3 class="font-bold text-gray-800 text-[15px]">${ex.name}</h3><div class="text-[10px] text-gray-400 mt-1">${ex.sets}组 × ${ex.reps} ${done ? '<span class="text-green-500 ml-2">✓ 已填</span>' : ''}</div></div>
+                        <div class="flex-1 min-w-0"><h3 class="font-bold text-gray-800 text-[15px] truncate">${escapeHtml(ex.name)}</h3><div class="text-[10px] text-gray-400 mt-1">${ex.sets}组 × ${escapeHtml(ex.reps)} ${done ? '<span class="text-green-500 ml-2">✓ 已填</span>' : ''}</div>${last ? `<div class="text-[10px] text-blue-500 mt-1 truncate">上次 ${escapeHtml(last.summary)} · ${formatShortDate(last.dateKey)}</div>` : ''}</div>
                         <div class="text-gray-200 ${done ? 'text-green-500' : ''}"><i class="fa-solid fa-circle-check text-xl"></i></div>
                     </div>`;
                 }).join('');
@@ -764,6 +871,7 @@
                 const day = this.state.workouts[this.state.selectedDay];
                 document.getElementById('plan-day-title').innerText = day.title;
                 document.getElementById('plan-day-count').innerText = day.exercises.length ? `${day.exercises.length} 个动作` : '休息日，可添加轻量恢复内容';
+                this.renderPlanCopyControls();
 
                 const list = document.getElementById('plan-list');
                 if (!day.exercises.length) {
@@ -775,12 +883,62 @@
                     <div class="bg-white rounded-2xl border border-gray-100 p-4 flex items-center space-x-3">
                         <div class="w-11 h-11 rounded-xl bg-blue-50 flex items-center justify-center text-blue-500"><i class="fa-solid ${ex.icon || iconForType(ex.type)}"></i></div>
                         <div class="flex-1 min-w-0">
-                            <div class="font-bold text-gray-900 text-sm truncate">${ex.name}</div>
-                            <div class="text-[11px] text-gray-400 mt-1">${typeLabel(ex.type)} · ${ex.sets}组 × ${ex.reps}</div>
+                            <div class="font-bold text-gray-900 text-sm truncate">${escapeHtml(ex.name)}</div>
+                            <div class="text-[11px] text-gray-400 mt-1">${typeLabel(ex.type)} · ${ex.sets}组 × ${escapeHtml(ex.reps)}</div>
                         </div>
                         <button onclick="App.openPlanEditor(${idx})" class="w-9 h-9 rounded-full bg-gray-50 text-gray-500 active-scale"><i class="fa-solid fa-pen text-xs"></i></button>
                     </div>
                 `).join('');
+            },
+            renderPlanCopyControls() {
+                const options = [1, 2, 3, 4, 5].map(day => {
+                    const title = this.state.workouts[day].title || '训练计划';
+                    return `<option value="${day}">周${['一','二','三','四','五'][day - 1]} · ${escapeHtml(title)}</option>`;
+                }).join('');
+                const target = document.getElementById('plan-copy-target');
+                const source = document.getElementById('plan-copy-source');
+                if (target) {
+                    target.innerHTML = options;
+                    target.value = String(this.state.selectedDay === 5 ? 1 : this.state.selectedDay + 1);
+                }
+                if (source) {
+                    source.innerHTML = options;
+                    source.value = String(this.state.selectedDay === 1 ? 5 : this.state.selectedDay - 1);
+                }
+            },
+            copyCurrentPlanToTarget() {
+                const targetDay = Number(document.getElementById('plan-copy-target').value);
+                if (!targetDay || targetDay === this.state.selectedDay) {
+                    this.showToast('请选择不同的目标日期');
+                    return;
+                }
+                const source = this.state.workouts[this.state.selectedDay];
+                if (!confirm(`把当前计划复制到周${['一','二','三','四','五'][targetDay - 1]}？目标日原计划会被覆盖。`)) return;
+                this.state.workouts[targetDay] = {
+                    ...this.state.workouts[targetDay],
+                    title: source.title,
+                    exercises: cloneData(source.exercises)
+                };
+                this.savePlan();
+                this.renderAll();
+                this.showToast('计划已复制');
+            },
+            copyPlanFromSource() {
+                const sourceDay = Number(document.getElementById('plan-copy-source').value);
+                if (!sourceDay || sourceDay === this.state.selectedDay) {
+                    this.showToast('请选择不同的来源日期');
+                    return;
+                }
+                const source = this.state.workouts[sourceDay];
+                if (!confirm(`用周${['一','二','三','四','五'][sourceDay - 1]}的计划覆盖当前日？`)) return;
+                this.state.workouts[this.state.selectedDay] = {
+                    ...this.state.workouts[this.state.selectedDay],
+                    title: source.title,
+                    exercises: cloneData(source.exercises)
+                };
+                this.savePlan();
+                this.renderAll();
+                this.showToast('计划已复制');
             },
             switchPlanDay(day) {
                 this.switchTab(day);
@@ -790,9 +948,12 @@
                 this.state.planEditIdx = idx;
                 const isEdit = idx !== null && idx !== undefined;
                 const day = this.state.workouts[this.state.selectedDay];
-                const ex = isEdit ? day.exercises[idx] : { name: '', type: 'weighted', sets: 3, reps: 12, detail: '' };
+                const ex = isEdit ? day.exercises[idx] : { name: '', type: 'weighted', sets: 3, reps: 12, detail: '', icon: null };
+                this.renderExerciseLibraryOptions();
+                this.state.planDraftIcon = ex.icon || null;
 
                 document.getElementById('plan-modal-title').innerText = isEdit ? '编辑动作' : '添加动作';
+                document.getElementById('plan-ex-library').value = '';
                 document.getElementById('plan-ex-name').value = ex.name || '';
                 document.getElementById('plan-ex-type').value = ex.type || 'weighted';
                 document.getElementById('plan-ex-sets').value = ex.sets || 3;
@@ -806,6 +967,24 @@
                     overlay.classList.remove('opacity-0');
                     document.getElementById('plan-modal-card').classList.remove('translate-y-full');
                 }, 10);
+            },
+            renderExerciseLibraryOptions() {
+                const select = document.getElementById('plan-ex-library');
+                if (!select) return;
+                select.innerHTML = `<option value="">手动填写 / 选择常用动作</option>` + EXERCISE_LIBRARY.map((ex, idx) => 
+                    `<option value="${idx}">${escapeHtml(ex.name)} · ${typeLabel(ex.type)}</option>`
+                ).join('');
+            },
+            applyLibraryExercise(value) {
+                if (value === '') return;
+                const ex = EXERCISE_LIBRARY[Number(value)];
+                if (!ex) return;
+                this.state.planDraftIcon = ex.icon || iconForType(ex.type);
+                document.getElementById('plan-ex-name').value = ex.name;
+                document.getElementById('plan-ex-type').value = ex.type;
+                document.getElementById('plan-ex-sets').value = ex.sets;
+                document.getElementById('plan-ex-reps').value = ex.reps;
+                document.getElementById('plan-ex-detail').value = ex.detail;
             },
             closePlanModal() {
                 const overlay = document.getElementById('plan-modal-overlay');
@@ -825,7 +1004,7 @@
                     return;
                 }
 
-                const exercise = { name, type, sets, reps, icon: iconForType(type), detail };
+                const exercise = { name, type, sets, reps, icon: this.state.planDraftIcon || iconForType(type), detail };
                 const day = this.state.workouts[this.state.selectedDay];
                 if (this.state.planEditIdx === null || this.state.planEditIdx === undefined) {
                     day.exercises.push(exercise);
@@ -854,6 +1033,164 @@
                 this.savePlan();
                 this.renderAll();
                 this.showToast('已恢复默认计划');
+            },
+            getMonthStats() {
+                const base = parseDateKey(this.state.selectedDate);
+                const month = base.getMonth();
+                const year = base.getFullYear();
+                const stats = { trainingDays: new Set(), completed: 0, strengthSets: 0, cardioMinutes: 0, cardioKcal: 0 };
+
+                Object.keys(this.state.logs).forEach(dateKey => {
+                    const date = parseDateKey(dateKey);
+                    if (date.getFullYear() !== year || date.getMonth() !== month) return;
+                    const record = this.state.logs[dateKey];
+                    const def = this.state.workouts[record.day] || WORKOUT_DB[record.day];
+                    if (!def) return;
+                    let dayHasLog = false;
+
+                    Object.keys(record.entries || {}).forEach(exIdx => {
+                        const ex = def.exercises[Number(exIdx)];
+                        const rows = record.entries[exIdx] || [];
+                        if (!ex || !isLogDone(ex, rows)) return;
+                        stats.completed++;
+                        dayHasLog = true;
+                        rows.forEach(row => {
+                            if (ex.type === 'cardio') {
+                                stats.cardioMinutes += toNumber(row.t);
+                                stats.cardioKcal += toNumber(row.c);
+                            } else if (ex.type === 'weighted' ? (row.w || row.r) : row.r) {
+                                stats.strengthSets++;
+                            }
+                        });
+                    });
+
+                    if (dayHasLog) stats.trainingDays.add(dateKey);
+                });
+
+                return {
+                    label: base.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long' }),
+                    trainingDays: stats.trainingDays.size,
+                    completed: stats.completed,
+                    strengthSets: stats.strengthSets,
+                    cardioMinutes: stats.cardioMinutes,
+                    cardioKcal: stats.cardioKcal
+                };
+            },
+            renderMonthlySummary() {
+                const monthStats = this.getMonthStats();
+                document.getElementById('month-label').innerText = monthStats.label;
+                document.getElementById('monthly-summary').innerHTML = [
+                    { label: '训练天数', value: `${monthStats.trainingDays}天`, icon: 'fa-calendar-days' },
+                    { label: '完成动作', value: `${monthStats.completed}个`, icon: 'fa-list-check' },
+                    { label: '力量组数', value: `${monthStats.strengthSets}组`, icon: 'fa-dumbbell' },
+                    { label: '有氧累计', value: `${monthStats.cardioMinutes}min`, icon: 'fa-heart-pulse' },
+                    { label: '热量记录', value: `${monthStats.cardioKcal}kcal`, icon: 'fa-fire' }
+                ].map(item => `
+                    <div class="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
+                        <div class="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-500 flex items-center justify-center mb-3"><i class="fa-solid ${item.icon} text-sm"></i></div>
+                        <div class="text-xl font-black text-gray-900">${item.value}</div>
+                        <div class="text-[11px] font-bold text-gray-400 mt-1">${item.label}</div>
+                    </div>
+                `).join('');
+            },
+            getTrendOptions() {
+                return [1, 2, 3, 4, 5].flatMap(day => {
+                    const plan = this.state.workouts[day];
+                    return (plan.exercises || []).map((ex, idx) => ({
+                        key: `${day}:${idx}`,
+                        day,
+                        idx,
+                        ex,
+                        label: `周${['一','二','三','四','五'][day - 1]} · ${ex.name}`
+                    }));
+                });
+            },
+            renderTrendOptions() {
+                const select = document.getElementById('trend-exercise-select');
+                if (!select) return;
+                const options = this.getTrendOptions();
+                const previous = this.state.trendKey || select.value;
+                select.innerHTML = options.length ? options.map(item => 
+                    `<option value="${item.key}">${escapeHtml(item.label)}</option>`
+                ).join('') : `<option value="">暂无动作</option>`;
+                this.state.trendKey = options.some(item => item.key === previous) ? previous : (options[0] ? options[0].key : '');
+                select.value = this.state.trendKey;
+            },
+            getTrendData(key) {
+                const [day, exIdx] = String(key || '').split(':').map(Number);
+                const ex = this.state.workouts[day] && this.state.workouts[day].exercises[exIdx];
+                if (!ex) return { labels: [], values: [], unit: '' };
+
+                const labels = [];
+                const values = [];
+                Object.keys(this.state.logs).sort().forEach(dateKey => {
+                    const record = this.state.logs[dateKey];
+                    const rows = record && record.day === day && record.entries ? record.entries[exIdx] : null;
+                    if (!isLogDone(ex, rows)) return;
+
+                    let value = 0;
+                    if (ex.type === 'cardio') {
+                        value = rows.reduce((sum, row) => sum + toNumber(row.t), 0);
+                    } else if (ex.type === 'weighted') {
+                        value = Math.max(...rows.map(row => toNumber(row.w)), 0);
+                    } else {
+                        value = Math.max(...rows.map(row => toNumber(row.r)), 0);
+                    }
+
+                    if (!value) return;
+                    labels.push(formatShortDate(dateKey));
+                    values.push(value);
+                });
+
+                return {
+                    labels,
+                    values,
+                    unit: ex.type === 'cardio' ? '分钟' : (ex.type === 'weighted' ? 'kg' : (ex.type === 'time' ? '秒' : '次'))
+                };
+            },
+            renderTrendChart() {
+                const select = document.getElementById('trend-exercise-select');
+                const empty = document.getElementById('trend-empty');
+                const wrap = document.getElementById('trend-chart-wrap');
+                if (!select || !empty || !wrap) return;
+                this.state.trendKey = select.value;
+                const trend = this.getTrendData(this.state.trendKey);
+
+                if (this.state.trendChart) {
+                    this.state.trendChart.destroy();
+                    this.state.trendChart = null;
+                }
+
+                if (!trend.values.length) {
+                    empty.classList.remove('hidden');
+                    wrap.classList.add('hidden');
+                    return;
+                }
+
+                empty.classList.add('hidden');
+                wrap.classList.remove('hidden');
+                this.state.trendChart = new Chart(document.getElementById('trendChart').getContext('2d'), {
+                    type: 'line',
+                    data: {
+                        labels: trend.labels,
+                        datasets: [{
+                            label: trend.unit,
+                            data: trend.values,
+                            borderColor: 'rgb(16, 185, 129)',
+                            backgroundColor: 'rgba(16, 185, 129, 0.12)',
+                            fill: true,
+                            tension: 0.35,
+                            pointRadius: 4,
+                            pointBackgroundColor: 'rgb(16, 185, 129)'
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { display: false } },
+                        scales: { y: { beginAtZero: true, ticks: { callback: value => `${value}${trend.unit}` } } }
+                    }
+                });
             },
             renderStats() {
                 const ctx = document.getElementById('completionChart').getContext('2d');
@@ -940,6 +1277,9 @@
 
                 if (this.state.chart) this.state.chart.destroy();
                 this.state.chart = new Chart(ctx, { type: 'bar', data: { labels, datasets: [{ label: '完成度 (%)', data, backgroundColor: 'rgba(59, 130, 246, 0.6)', borderRadius: 6 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, max: 100 } } } });
+                this.renderMonthlySummary();
+                this.renderTrendOptions();
+                this.renderTrendChart();
             },
             exportData() {
                 if (!confirm("确定导出Excel？")) return;
@@ -977,9 +1317,10 @@
             exportBackup() {
                 const payload = {
                     app: "博士健身日志",
-                    version: 1,
+                    version: 2,
                     exportedAt: new Date().toISOString(),
-                    logsByDate: this.state.logs
+                    logsByDate: this.state.logs,
+                    workoutPlan: this.state.workouts
                 };
                 const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
                 const url = URL.createObjectURL(blob);
@@ -1013,6 +1354,10 @@
                         if (!Object.keys(cleaned).length) throw new Error('Empty backup');
                         if (!confirm("恢复备份会覆盖当前本地数据，确定继续？")) return;
                         this.state.logs = cleaned;
+                        if (parsed.workoutPlan) {
+                            this.state.workouts = normalizeWorkoutPlan(parsed.workoutPlan);
+                            this.savePlan();
+                        }
                         this.persistLocal();
                         this.renderAll();
                         this.showToast("备份已恢复");
